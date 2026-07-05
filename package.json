@@ -1,0 +1,49 @@
+{
+  "name": "tradr-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "db:status": "tsx scripts/db-status.ts",
+    "ktrade:inspect-login": "tsx scripts/inspect-ktrade-login.ts",
+    "ktrade:inspect-auth": "tsx scripts/inspect-ktrade-auth.ts",
+    "ktrade:inspect-portfolio": "tsx scripts/inspect-ktrade-portfolio.ts",
+    "collector": "tsx src/jobs/collector.ts",
+    "playwright:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.7.9",
+    "date-fns": "^4.1.0",
+    "dotenv": "^17.4.2",
+    "googleapis": "^144.0.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^0.468.0",
+    "next": "^15.1.2",
+    "playwright": "^1.49.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.15.0",
+    "tsx": "^4.19.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.1.2",
+    "globals": "^16.5.0",
+    "prisma": "^5.22.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.62.1"
+  }
+}

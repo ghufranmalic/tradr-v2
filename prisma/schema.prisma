@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Ticker {
+  id          String        @id @default(cuid())
+  symbol      String        @unique
+  name        String?
+  exchange    String        @default("PSX")
+  sector      String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  prices      PriceBar[]
+  holdings    Holding[]
+  portfolioPositions PortfolioPosition[]
+  watchItems  WatchlistItem[]
+  signals     Signal[]
+  alertRules  AlertRule[]
+  orders      Order[]
+}
+
+model PriceBar {
+  id        String   @id @default(cuid())
+  tickerId  String
+  ticker    Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  date      DateTime
+  interval  String   @default("1d")
+  open      Decimal
+  high      Decimal
+  low       Decimal
+  close     Decimal
+  volume    BigInt   @default(0)
+  source    String   @default("ktrade")
+  createdAt DateTime @default(now())
+
+  @@unique([tickerId, date, interval])
+  @@index([date])
+}
+
+model IndicatorSnapshot {
+  id        String   @id @default(cuid())
+  symbol    String
+  date      DateTime
+  sma20     Decimal?
+  sma50     Decimal?
+  ema12     Decimal?
+  ema26     Decimal?
+  rsi14     Decimal?
+  macd      Decimal?
+  macdSignal Decimal?
+  macdHist  Decimal?
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@index([date])
+}
+
+model Watchlist {
+  id        String          @id @default(cuid())
+  name      String          @unique
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  items     WatchlistItem[]
+}
+
+model WatchlistItem {
+  id          String    @id @default(cuid())
+  watchlistId String
+  tickerId    String
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  ticker      Ticker    @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([watchlistId, tickerId])
+}
+
+model Holding {
+  id            String   @id @default(cuid())
+  tickerId      String
+  ticker        Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  quantity      Decimal
+  averageBuy    Decimal
+  targetPrice   Decimal?
+  stopLossPrice Decimal?
+  broker        String   @default("KTrade")
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@unique([tickerId, broker])
+}
+
+model PortfolioPosition {
+  id               String   @id @default(cuid())
+  tickerId         String
+  ticker           Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  broker           String   @default("KTrade")
+  market           String?
+  position         Decimal
+  purchasePrice    Decimal
+  lastPrice        Decimal
+  todayGainLoss    Decimal  @default(0)
+  totalGainLoss    Decimal  @default(0)
+  bidSize          Decimal  @default(0)
+  bidPrice         Decimal  @default(0)
+  askPrice         Decimal  @default(0)
+  askSize          Decimal  @default(0)
+  change           Decimal  @default(0)
+  holding          Decimal?
+  holdingAvailable Decimal?
+  marketRate       Decimal?
+  custodyValue     Decimal?
+  profitLoss       Decimal?
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  @@unique([tickerId, broker])
+}
+
+model PortfolioSummaryMetric {
+  id        String   @id @default(cuid())
+  broker    String   @default("KTrade")
+  label     String
+  value     Decimal
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([broker, label])
+}
+
+model Signal {
+  id        String   @id @default(cuid())
+  tickerId  String
+  ticker    Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  type      String
+  side      String
+  score     Int      @default(0)
+  message   String
+  date      DateTime @default(now())
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([side])
+}
+
+model AlertRule {
+  id         String    @id @default(cuid())
+  tickerId   String?
+  ticker     Ticker?   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  name       String
+  type       String
+  operator   String
+  threshold  Decimal
+  channel    String    @default("telegram")
+  enabled    Boolean   @default(true)
+  lastSentAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  events     AlertEvent[]
+}
+
+model AlertEvent {
+  id          String    @id @default(cuid())
+  alertRuleId String
+  alertRule   AlertRule @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
+  symbol      String
+  message     String
+  value       Decimal
+  sentAt      DateTime  @default(now())
+}
+
+model CollectionRun {
+  id          String   @id @default(cuid())
+  status      String
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  quoteCount  Int      @default(0)
+  error       String?
+  progress    String?
+
+  @@index([startedAt])
+}
+
+model Order {
+  id             String    @id @default(cuid())
+  tickerId       String
+  ticker         Ticker    @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  side           String
+  quantity       Decimal
+  limitPrice     Decimal?
+  estimatedValue Decimal   @default(0)
+  reason         String
+  signalType     String?
+  status         String    @default("proposed")
+  mode           String    @default("confirm")
+  detail         String?
+  proposedAt     DateTime  @default(now())
+  decidedAt      DateTime?
+  executedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([proposedAt])
+}
+
+model TradeSettings {
+  id                 String   @id
+  enabled            Boolean  @default(false)
+  autoApprove        Boolean  @default(false)
+  liveExecution      Boolean  @default(false)
+  sellPortionPercent Decimal  @default(100)
+  buyOrderValue      Decimal  @default(25000)
+  maxOrderValue      Decimal  @default(50000)
+  maxOrdersPerDay    Int      @default(5)
+  updatedAt          DateTime @updatedAt
+}
+
+model CollectionPolicy {
+  id                   String   @id
+  manualRefreshEnabled Boolean  @default(true)
+  scheduledEnabled     Boolean  @default(false)
+  intervalMinutes      Int      @default(5)
+  weekdays             String   @default("1,2,3,4,5")
+  startTime            String   @default("09:00")
+  endTime              String   @default("15:59")
+  timezone             String   @default("Asia/Karachi")
+  lastScheduledRunAt   DateTime?
+  pendingSyncAt        DateTime?
+  updatedAt            DateTime @updatedAt
+}
+
+model MySignalPreference {
+  id              String   @id
+  positivePercent Decimal  @default(5)
+  negativePercent Decimal  @default(-5)
+  enabled         Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}

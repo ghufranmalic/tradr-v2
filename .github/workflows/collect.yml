@@ -1,0 +1,63 @@
+name: Collect KTrade data
+
+on:
+  schedule:
+    # PSX trading hours, Mon-Fri, every 5 minutes, 09:00-15:59 Asia/Karachi (UTC+5) = 04:00-10:59 UTC
+    - cron: "*/5 4-10 * * 1-5"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ktrade-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore KTrade session
+        uses: actions/cache/restore@v4
+        with:
+          path: playwright/.auth
+          key: ktrade-session-${{ github.run_id }}
+          restore-keys: |
+            ktrade-session-
+
+      - name: Run collector
+        env:
+          COLLECT_TRIGGER: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'scheduled' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          KTRADE_LOGIN_URL: ${{ secrets.KTRADE_LOGIN_URL }}
+          KTRADE_DASHBOARD_URL: ${{ secrets.KTRADE_DASHBOARD_URL }}
+          KTRADE_USERNAME: ${{ secrets.KTRADE_USERNAME }}
+          KTRADE_PASSWORD: ${{ secrets.KTRADE_PASSWORD }}
+          KTRADE_SECOND_LEVEL_PASSWORD: ${{ secrets.KTRADE_SECOND_LEVEL_PASSWORD }}
+          KTRADE_TOTP_SECRET: ${{ secrets.KTRADE_TOTP_SECRET }}
+          KTRADE_QUOTES_API_URL: ${{ secrets.KTRADE_QUOTES_API_URL }}
+          KTRADE_ORDER_SELECTORS_JSON: ${{ secrets.KTRADE_ORDER_SELECTORS_JSON }}
+          AUTO_TRADE_LIVE: ${{ secrets.AUTO_TRADE_LIVE }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GOOGLE_SHEETS_CLIENT_EMAIL: ${{ secrets.GOOGLE_SHEETS_CLIENT_EMAIL }}
+          GOOGLE_SHEETS_PRIVATE_KEY: ${{ secrets.GOOGLE_SHEETS_PRIVATE_KEY }}
+        run: npm run collector
+
+      - name: Save KTrade session
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: playwright/.auth
+          key: ktrade-session-${{ github.run_id }}
