@@ -65,6 +65,70 @@ export function buildSignals(quote: Quote, previousClose: number | undefined, in
   return signals;
 }
 
+/**
+ * Same technical checks as buildSignals, but driven off a portfolio position's
+ * last price instead of a full OHLCV quote — used when KTrade doesn't expose a
+ * separate market-quotes feed. Skips near_day_high since positions don't carry
+ * a real intraday high (only lastPrice), so that check would be meaningless.
+ */
+export function buildPositionIndicatorSignals(
+  symbol: string,
+  close: number,
+  previousClose: number | undefined,
+  indicators: IndicatorSet
+): SignalInput[] {
+  const signals: SignalInput[] = [];
+
+  if (indicators.sma20 && close < indicators.sma20) {
+    signals.push({
+      symbol,
+      type: "below_sma20",
+      side: "buy",
+      score: 55,
+      message: `${symbol} is below its 20-day moving average`,
+      metadata: { close, sma20: indicators.sma20 }
+    });
+  }
+
+  if (indicators.rsi14 !== undefined && indicators.rsi14 < 30) {
+    signals.push({
+      symbol,
+      type: "oversold_rsi",
+      side: "buy",
+      score: 75,
+      message: `${symbol} RSI is oversold at ${indicators.rsi14}`,
+      metadata: { rsi14: indicators.rsi14 }
+    });
+  }
+
+  if (indicators.macd !== undefined && indicators.macdSignal !== undefined && indicators.macd > indicators.macdSignal) {
+    signals.push({
+      symbol,
+      type: "macd_bullish",
+      side: "watch",
+      score: 60,
+      message: `${symbol} MACD is above signal line`,
+      metadata: { macd: indicators.macd, macdSignal: indicators.macdSignal }
+    });
+  }
+
+  if (previousClose) {
+    const change = percentChange(close, previousClose);
+    if (change <= -5) {
+      signals.push({
+        symbol,
+        type: "price_drop",
+        side: "watch",
+        score: 65,
+        message: `${symbol} dropped ${change.toFixed(2)}% from previous close`,
+        metadata: { change, close, previousClose }
+      });
+    }
+  }
+
+  return signals;
+}
+
 export function buildPortfolioSignals(positions: PortfolioPositionInput[], thresholds = { positivePercent: 5, negativePercent: -5, enabled: true }): SignalInput[] {
   if (!thresholds.enabled) return [];
   return positions.flatMap((position): SignalInput[] => {

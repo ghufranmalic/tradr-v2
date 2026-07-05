@@ -15,7 +15,7 @@ import {
   watchlistSymbols
 } from "@/src/services/market-repository";
 import { calculateIndicators } from "@/src/services/indicators";
-import { buildPortfolioSignals, buildSignals } from "@/src/services/signals";
+import { buildPortfolioSignals, buildPositionIndicatorSignals } from "@/src/services/signals";
 import { syncDailyQuotesToSheets } from "@/src/services/sheets";
 import { evaluateAlerts } from "@/src/services/alerts";
 import { decideCollection, markScheduledCollectionRun, type CollectionTrigger } from "@/src/services/collection-policy";
@@ -117,19 +117,23 @@ export async function collectMarketData(
     const mySignalPreference = await getMySignalPreference();
     const allSignals: SignalInput[] = [...buildPortfolioSignals(portfolioPositions, mySignalPreference)];
 
-    const uniqueQuotes = [...new Map(quotes.map((quote) => [quote.symbol, quote])).values()];
-    const seriesBySymbol = await closeSeriesBulk(uniqueQuotes.map((quote) => quote.symbol));
+    // Technical indicators run off each holding's own recorded price history
+    // (recordPortfolioDailyCloses above) rather than a separate quotes feed —
+    // KTrade doesn't expose one that's reachable from this collector.
+    const uniquePositions = [...new Map(portfolioPositions.map((position) => [position.symbol, position])).values()];
+    const now = new Date();
+    const seriesBySymbol = await closeSeriesBulk(uniquePositions.map((position) => position.symbol));
 
     const indicatorEntries: Array<{ symbol: string; date: Date; indicators: ReturnType<typeof calculateIndicators> }> = [];
-    for (const quote of uniqueQuotes) {
-      const series = seriesBySymbol.get(quote.symbol) ?? [];
+    for (const position of uniquePositions) {
+      const series = seriesBySymbol.get(position.symbol) ?? [];
       const closes = series.map((row) => row.close);
       const indicators = calculateIndicators(closes);
-      indicatorEntries.push({ symbol: quote.symbol, date: quote.timestamp, indicators });
+      indicatorEntries.push({ symbol: position.symbol, date: now, indicators });
 
-      const tradingDate = normalizeTradingDate(quote.timestamp);
+      const tradingDate = normalizeTradingDate(now);
       const previous = [...series].reverse().find((row) => row.date < tradingDate)?.close;
-      allSignals.push(...buildSignals(quote, previous, indicators));
+      allSignals.push(...buildPositionIndicatorSignals(position.symbol, position.lastPrice, previous, indicators));
     }
     await saveIndicatorsBulk(indicatorEntries);
     await saveSignals(allSignals);
