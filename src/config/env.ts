@@ -1,10 +1,13 @@
 import { z } from "zod";
 import "dotenv/config";
 
+/** GitHub Actions passes unset secrets as "", not undefined — treat "" as unset before URL validation. */
+const optionalUrl = () => z.preprocess((value) => (value === "" ? undefined : value), z.string().url().optional());
+
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   KTRADE_LOGIN_URL: z.string().url().default("https://example.ktrade.local/login"),
-  KTRADE_DASHBOARD_URL: z.string().url().optional(),
+  KTRADE_DASHBOARD_URL: optionalUrl(),
   KTRADE_USERNAME: z.string().optional().default(""),
   KTRADE_PASSWORD: z.string().optional().default(""),
   KTRADE_TOTP_SECRET: z.string().optional().default(""),
@@ -20,7 +23,7 @@ const envSchema = z.object({
   KTRADE_PORTFOLIO_URL_PATTERN: z.string().default("portfolio"),
   KTRADE_QUOTES_URL_PATTERN: z.string().default("TopSectorStocksFull"),
   /** Optional direct JSON endpoint for quotes — skips page scraping entirely when set. */
-  KTRADE_QUOTES_API_URL: z.string().url().optional(),
+  KTRADE_QUOTES_API_URL: optionalUrl(),
   /** JSON map of CSS selectors for the KTrade order ticket; live order placement stays off without it. */
   KTRADE_ORDER_SELECTORS_JSON: z.string().optional().default(""),
   /** Master switch for live order execution. Orders stay in confirm/dry-run mode unless "true". */
