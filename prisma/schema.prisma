@@ -232,6 +232,7 @@ model CollectionPolicy {
   timezone             String   @default("Asia/Karachi")
   lastScheduledRunAt   DateTime?
   pendingSyncAt        DateTime?
+  workerSeenAt         DateTime?
   updatedAt            DateTime @updatedAt
 }
 

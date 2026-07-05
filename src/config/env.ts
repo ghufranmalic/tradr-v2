@@ -1,7 +1,7 @@
 import { z } from "zod";
 import "dotenv/config";
 
-/** GitHub Actions passes unset secrets as "", not undefined — treat "" as unset before URL validation. */
+/** Some environments pass unset optional vars as "" rather than undefined — treat "" as unset before URL validation. */
 const optionalUrl = () => z.preprocess((value) => (value === "" ? undefined : value), z.string().url().optional());
 
 const envSchema = z.object({
@@ -28,10 +28,6 @@ const envSchema = z.object({
   KTRADE_ORDER_SELECTORS_JSON: z.string().optional().default(""),
   /** Master switch for live order execution. Orders stay in confirm/dry-run mode unless "true". */
   AUTO_TRADE_LIVE: z.coerce.boolean().default(false),
-  /** GitHub repo (owner/name) + token used by the Vercel app to trigger the collector workflow. */
-  GITHUB_REPO: z.string().optional().default(""),
-  GITHUB_WORKFLOW_TOKEN: z.string().optional().default(""),
-  GITHUB_COLLECT_WORKFLOW: z.string().default("collect.yml"),
   GOOGLE_SHEETS_SPREADSHEET_ID: z.string().optional().default(""),
   GOOGLE_SHEETS_CLIENT_EMAIL: z.string().optional().default(""),
   GOOGLE_SHEETS_PRIVATE_KEY: z.string().optional().default(""),
@@ -50,7 +46,6 @@ export const hasGoogleSheetsConfig = Boolean(
     env.GOOGLE_SHEETS_PRIVATE_KEY
 );
 export const hasTelegramConfig = Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID);
-export const hasGithubDispatchConfig = Boolean(env.GITHUB_REPO && env.GITHUB_WORKFLOW_TOKEN);
 
 export type OrderTicketSelectors = {
   openTicket: string;

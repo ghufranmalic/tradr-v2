@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { isLocalCollectorAvailable } from "@/src/lib/runtime";
 import { decideCollection } from "@/src/services/collection-policy";
-import { triggerCollectWorkflow } from "@/src/services/github-dispatch";
 import { getSyncProgress, isSyncActive } from "@/src/services/sync-progress";
 import { getSyncQueueStatus, requestRemoteSync } from "@/src/services/sync-queue";
 
@@ -38,20 +37,14 @@ export async function POST() {
     return NextResponse.json({ ok: true, mode: "direct", started: true, ...status });
   }
 
-  // Cloud mode: queue the sync and kick the GitHub Actions collector.
+  // On Vercel: queue the sync for the local sync-watcher (running on your PC) to pick up.
   const status = await requestRemoteSync();
-  const dispatch = await triggerCollectWorkflow().catch((error) => ({
-    triggered: false,
-    detail: error instanceof Error ? error.message : String(error)
-  }));
-
   return NextResponse.json({
     ok: true,
     mode: "remote",
     ...status,
-    dispatched: dispatch.triggered,
-    message: dispatch.triggered
-      ? "Sync started on GitHub Actions — data will refresh shortly."
-      : `Sync queued. ${dispatch.detail}`
+    message: status.workerOnline
+      ? "Sync queued — your PC will pick it up shortly."
+      : "Sync queued — start npm run sync-watcher on your PC to process it."
   });
 }

@@ -168,10 +168,12 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof LayoutGrid }> = [
 
 export default function DashboardClient({
   data,
-  syncMode = "direct"
+  syncMode = "direct",
+  workerOnline = false
 }: {
   data: DashboardData;
   syncMode?: "direct" | "remote";
+  workerOnline?: boolean;
 }) {
   const router = useRouter();
   const { dashboard, replaceDashboard } = useDashboardSnapshot(data);
@@ -373,14 +375,19 @@ export default function DashboardClient({
     try {
       if (syncMode === "remote") {
         progressInterval = window.setInterval(() => void pollSyncProgress(true), 300);
-        setMessage("Queuing sync...");
+        setMessage("Queuing sync on your PC...");
         const response = await fetch("/api/collect", { method: "POST" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error ?? "Sync could not be queued.");
-        setMessage(payload.message ?? "Sync queued.");
+
+        if (!payload.workerOnline) {
+          setMessage("Sync queued. Keep npm run sync-watcher running on your PC.");
+        } else {
+          setMessage("Sync queued — waiting for your PC...");
+        }
 
         const requestedAt = Date.now();
-        for (let attempt = 0; attempt < 60; attempt += 1) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 3000));
           const statusResponse = await fetch("/api/collect");
           const status = await statusResponse.json();
@@ -394,12 +401,12 @@ export default function DashboardClient({
               return;
             }
             if (status.lastRun?.status === "failed") {
-              throw new Error(status.lastRun.error ?? "Sync failed on GitHub Actions.");
+              throw new Error(status.lastRun.error ?? "Sync failed on your PC.");
             }
           }
         }
 
-        setMessage("Sync still running on GitHub Actions — refresh this page in a minute.");
+        setMessage("Sync still running on your PC — refresh this page in a minute.");
         return;
       }
 
@@ -577,12 +584,18 @@ export default function DashboardClient({
     settings: { title: "Settings", sub: "Collection schedule and run history" }
   };
 
-  const syncTitle = syncMode === "direct" ? "Refresh KTrade data" : "Run the collector on GitHub Actions";
+  const syncTitle =
+    syncMode === "direct"
+      ? "Refresh KTrade data"
+      : workerOnline
+        ? "Queue sync on your PC (sync-watcher must be running)"
+        : "Queue sync — start npm run sync-watcher on your PC";
 
   const syncDisabled = syncBusy || !settings.manualRefreshEnabled;
 
   const tickerSignals = dashboard.signals;
-  const showRemoteSetupBanner = syncMode === "remote" && !hasCachedData;
+  const showRemoteOfflineBanner = syncMode === "remote" && !workerOnline;
+  const showRemoteSetupBanner = syncMode === "remote" && workerOnline && !hasCachedData;
 
   return (
     <div className="app">
@@ -651,10 +664,21 @@ export default function DashboardClient({
           </div>
         </div>
 
+        {showRemoteOfflineBanner ? (
+          <div className="live-sync-banner live-sync-banner-warn" role="status">
+            <strong>PC offline</strong>
+            <span>
+              Your PC is not running <code>npm run sync-watcher</code>. Showing last synced data until it reconnects.
+            </span>
+          </div>
+        ) : null}
+
         {showRemoteSetupBanner ? (
           <div className="live-sync-banner" role="status">
             <strong>First sync</strong>
-            <span>Press Sync to run the KTrade collector on GitHub Actions and load portfolio data.</span>
+            <span>
+              Keep <code>npm run sync-watcher</code> running on your PC, then press Sync to load portfolio data.
+            </span>
           </div>
         ) : null}
 
