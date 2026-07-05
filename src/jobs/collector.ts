@@ -15,7 +15,7 @@ import {
   watchlistSymbols
 } from "@/src/services/market-repository";
 import { calculateIndicators } from "@/src/services/indicators";
-import { buildPortfolioSignals, buildPositionIndicatorSignals } from "@/src/services/signals";
+import { buildPortfolioSignals, buildPositionIndicatorSignals, buildSignals } from "@/src/services/signals";
 import { syncDailyQuotesToSheets } from "@/src/services/sheets";
 import { evaluateAlerts } from "@/src/services/alerts";
 import { decideCollection, markScheduledCollectionRun, type CollectionTrigger } from "@/src/services/collection-policy";
@@ -111,30 +111,47 @@ export async function collectMarketData(
     await startSyncStep("quotes", "Fetching market quotes");
     const quotes = await client.fetchQuotes(symbols);
     await saveQuotes(quotes);
+    if (quotes.length > 0) {
+      await saveWatchlists([
+        { name: "KTrade Default Watch", symbols: quotes.map((quote) => ({ symbol: quote.symbol })) }
+      ]);
+    }
     await finishSyncStep("quotes", `${quotes.length} symbols`);
 
     await startSyncStep("signals", "Calculating signals & indicators");
     const mySignalPreference = await getMySignalPreference();
     const allSignals: SignalInput[] = [...buildPortfolioSignals(portfolioPositions, mySignalPreference)];
-
-    // Technical indicators run off each holding's own recorded price history
-    // (recordPortfolioDailyCloses above) rather than a separate quotes feed —
-    // KTrade doesn't expose one that's reachable from this collector.
-    const uniquePositions = [...new Map(portfolioPositions.map((position) => [position.symbol, position])).values()];
     const now = new Date();
-    const seriesBySymbol = await closeSeriesBulk(uniquePositions.map((position) => position.symbol));
-
+    const tradingDate = normalizeTradingDate(now);
     const indicatorEntries: Array<{ symbol: string; date: Date; indicators: ReturnType<typeof calculateIndicators> }> = [];
+
+    // Portfolio technical signals run off each holding's own recorded price
+    // history (recordPortfolioDailyCloses above) since it's the price series
+    // we reliably control regardless of the separate quotes feed below.
+    const uniquePositions = [...new Map(portfolioPositions.map((position) => [position.symbol, position])).values()];
+    const positionSeriesBySymbol = await closeSeriesBulk(uniquePositions.map((position) => position.symbol));
     for (const position of uniquePositions) {
-      const series = seriesBySymbol.get(position.symbol) ?? [];
-      const closes = series.map((row) => row.close);
-      const indicators = calculateIndicators(closes);
+      const series = positionSeriesBySymbol.get(position.symbol) ?? [];
+      const indicators = calculateIndicators(series.map((row) => row.close));
       indicatorEntries.push({ symbol: position.symbol, date: now, indicators });
 
-      const tradingDate = normalizeTradingDate(now);
       const previous = [...series].reverse().find((row) => row.date < tradingDate)?.close;
       allSignals.push(...buildPositionIndicatorSignals(position.symbol, position.lastPrice, previous, indicators));
     }
+
+    // Quotes symbols (KTrade's own "DEFAULT WATCH" list) get the full
+    // technical signal set, since real OHLCV is available for them.
+    const uniqueQuotes = [...new Map(quotes.map((quote) => [quote.symbol, quote])).values()];
+    const quoteSeriesBySymbol = await closeSeriesBulk(uniqueQuotes.map((quote) => quote.symbol));
+    for (const quote of uniqueQuotes) {
+      const series = quoteSeriesBySymbol.get(quote.symbol) ?? [];
+      const indicators = calculateIndicators(series.map((row) => row.close));
+      indicatorEntries.push({ symbol: quote.symbol, date: quote.timestamp, indicators });
+
+      const previous = [...series].reverse().find((row) => row.date < tradingDate)?.close;
+      allSignals.push(...buildSignals(quote, previous, indicators));
+    }
+
     await saveIndicatorsBulk(indicatorEntries);
     await saveSignals(allSignals);
     await finishSyncStep("signals", `${allSignals.length} signals`);

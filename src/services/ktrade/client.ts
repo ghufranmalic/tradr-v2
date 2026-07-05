@@ -31,6 +31,7 @@ export class KTradeClient {
   private captured: CapturedPayloads = { watchlists: [], portfolio: [], quotes: [] };
   private dashboardReady = false;
   private portfolioWatchReady = false;
+  private defaultWatchReady = false;
 
   async connect(): Promise<void> {
     this.browser = await chromium.launch({ headless: env.KTRADE_HEADLESS });
@@ -182,39 +183,45 @@ export class KTradeClient {
     return pairs.map((pair) => ({ label: pair.label, value: toNumber(pair.value) }));
   }
 
+  /**
+   * Returns whatever symbols are in KTrade's own "DEFAULT WATCH" market-watch
+   * tab (not filtered by `symbols` — that list is a separate, user-managed
+   * watchlist inside KTrade itself, not necessarily overlapping the portfolio).
+   * Column layout confirmed against the live table.watchTable markup:
+   * 3=SYMBOL, 5=LAST, 12=HIGH, 13=LOW, 14=OPEN (hidden), 15=LAST VOL (hidden).
+   */
   async fetchQuotes(symbols: string[]): Promise<Quote[]> {
     const direct = await this.fetchQuotesViaApi(symbols);
     if (direct.length > 0) return direct;
 
-    await this.ensureDashboard();
-    await this.waitForCapture("quotes", DATA_WAIT_MS);
+    await this.waitForCapture("quotes", 1_000);
     const fromJson = normalizeQuotes(this.captured.quotes);
     if (fromJson.length > 0) {
       const wanted = new Set(symbols.map((symbol) => symbol.toUpperCase()));
       return fromJson.filter((quote) => wanted.size === 0 || wanted.has(quote.symbol.toUpperCase()));
     }
 
-    const rows = await this.requirePage().locator("table").evaluateAll((tables) =>
-      tables.flatMap((table) =>
-        Array.from(table.querySelectorAll("tbody tr")).map((row) =>
-          Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent?.trim() ?? "")
-        )
-      )
-    );
+    await this.openDefaultWatch();
+    const rows = await this.requirePage()
+      .locator("table.watchTable")
+      .first()
+      .locator("tbody tr")
+      .evaluateAll((trs) => trs.map((tr) => Array.from(tr.querySelectorAll("td")).map((td) => td.textContent?.trim() ?? "")));
 
-    const wanted = new Set(symbols.map((symbol) => symbol.toUpperCase()));
     return rows
-      .map((cells) => ({
-        symbol: cells[0] ?? "",
-        name: cells[1],
-        open: toNumber(cells[2]),
-        high: toNumber(cells[3]),
-        low: toNumber(cells[4]),
-        close: toNumber(cells[5]),
-        volume: toNumber(cells[6]),
-        timestamp: new Date()
-      }))
-      .filter((quote) => quote.symbol && quote.close > 0 && (wanted.size === 0 || wanted.has(quote.symbol.toUpperCase())));
+      .map((cells) => {
+        const close = toNumber(cells[5]);
+        return {
+          symbol: cells[3] ?? "",
+          open: toNumber(cells[14]) || close,
+          high: toNumber(cells[12]) || close,
+          low: toNumber(cells[13]) || close,
+          close,
+          volume: toNumber(cells[15]),
+          timestamp: new Date()
+        };
+      })
+      .filter((quote) => isSymbol(quote.symbol) && quote.close > 0);
   }
 
   /**
@@ -353,6 +360,19 @@ export class KTradeClient {
       .waitFor({ state: "attached", timeout: 5_000 })
       .catch(() => undefined);
     this.portfolioWatchReady = true;
+  }
+
+  /** Opens the "DEFAULT WATCH" market-watch tab (KTrade's own general watchlist, separate from portfolio holdings). */
+  private async openDefaultWatch(): Promise<void> {
+    const page = this.requirePage();
+    const watchTable = page.locator("table.watchTable").first();
+    if (this.defaultWatchReady && (await watchTable.isVisible().catch(() => false))) return;
+
+    await this.ensureDashboard();
+    await page.locator("text=Watches").first().hover({ timeout: 10_000 });
+    await page.locator("text=DEFAULT WATCH").first().click({ timeout: 10_000 });
+    await watchTable.locator("tbody tr").first().waitFor({ state: "attached", timeout: DATA_WAIT_MS }).catch(() => undefined);
+    this.defaultWatchReady = true;
   }
 
   private async completeSecondLevelLoginIfNeeded(): Promise<void> {
