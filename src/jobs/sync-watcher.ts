@@ -36,23 +36,36 @@ async function runCollector(trigger: "manual" | "scheduled", label: string): Pro
   }
 }
 
+/** Transient network/DB hiccups (Neon cold starts, brief outages) must never kill this long-running process. */
 async function pollPendingSync(): Promise<void> {
-  await touchWorkerSeen();
-  if (running) return;
+  try {
+    await touchWorkerSeen();
+    if (running) return;
 
-  const status = await getSyncQueueStatus();
-  if (!status.pendingSyncAt) return;
+    const status = await getSyncQueueStatus();
+    if (!status.pendingSyncAt) return;
 
-  await clearPendingSync();
-  await runCollector("manual", "dashboard-requested sync");
+    await clearPendingSync();
+    await runCollector("manual", "dashboard-requested sync");
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Poll tick failed (will retry)`, error);
+  }
 }
 
 async function pollScheduledCollection(): Promise<void> {
-  if (running) return;
-  const decision = await decideCollection("scheduled");
-  if (!decision.allowed) return;
-  await runCollector("scheduled", "scheduled collection");
+  try {
+    if (running) return;
+    const decision = await decideCollection("scheduled");
+    if (!decision.allowed) return;
+    await runCollector("scheduled", "scheduled collection");
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Scheduled poll tick failed (will retry)`, error);
+  }
 }
+
+process.on("unhandledRejection", (error) => {
+  console.error(`[${new Date().toISOString()}] Unhandled rejection (watcher stays alive)`, error);
+});
 
 async function start(): Promise<void> {
   console.log("Sync watcher active on this PC — logins run from your home network.");
