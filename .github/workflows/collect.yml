@@ -27,6 +27,13 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Diagnose KTrade connectivity
+        run: |
+          echo "--- curl -v (10s connect timeout) ---"
+          curl -v --connect-timeout 10 --max-time 20 "${{ secrets.KTRADE_DASHBOARD_URL }}" || echo "curl exit: $?"
+          echo "--- runner egress IP ---"
+          curl -s https://ifconfig.me || true
+
       - name: Restore KTrade session
         uses: actions/cache/restore@v4
         with:
