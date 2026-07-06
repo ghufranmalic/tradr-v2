@@ -557,7 +557,7 @@ export default function DashboardClient({
     downloadPortfolioPdf(sortedPortfolioRows);
   }
 
-  async function decideOrder(id: string, action: "approve" | "reject") {
+  async function decideOrder(id: string, action: "approve" | "reject" | "cancel") {
     setOrderBusy(id);
     try {
       const response = await fetch("/api/orders", {
@@ -567,7 +567,7 @@ export default function DashboardClient({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Could not update order.");
-      setMessage(action === "approve" ? "Order approved." : "Order rejected.");
+      setMessage(action === "approve" ? "Order approved." : action === "reject" ? "Order rejected." : "Order cancelled.");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -1448,6 +1448,18 @@ export default function DashboardClient({
                               type="button"
                             >
                               Reject
+                            </button>
+                          </div>
+                        ) : null}
+                        {order.status === "approved" ? (
+                          <div className="order-actions">
+                            <button
+                              className="btn btn-sm btn-ghost"
+                              disabled={orderBusy === order.id}
+                              onClick={() => decideOrder(order.id, "cancel")}
+                              type="button"
+                            >
+                              Cancel
                             </button>
                           </div>
                         ) : null}

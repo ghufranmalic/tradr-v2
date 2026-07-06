@@ -276,6 +276,25 @@ export async function decideOrder(orderId: string, action: "approve" | "reject")
   });
 }
 
+/**
+ * Cancels an order that was already approved but hasn't been placed yet.
+ * Only valid from "approved" — a "proposed" order should use reject instead,
+ * and a "placed"/"failed" order already ran (or attempted to) and can't be undone here.
+ * Small race window against a concurrent executeApprovedOrders() run is accepted
+ * as low-risk for a single-user tool rather than adding row-level locking.
+ */
+export async function cancelOrder(orderId: string): Promise<{ ok: true } | { error: string }> {
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) return { error: "Order not found." };
+  if (order.status !== "approved") return { error: `Only approved orders can be cancelled (this one is ${order.status}).` };
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { status: "cancelled", decidedAt: new Date() }
+  });
+  return { ok: true };
+}
+
 function buildProposal(
   position: PortfolioPositionInput,
   thresholds: { positivePercent: number; negativePercent: number },

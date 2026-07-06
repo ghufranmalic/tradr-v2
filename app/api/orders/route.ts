@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/src/lib/prisma";
-import { decideOrder, proposeManualOrder } from "@/src/services/trade-engine";
+import { cancelOrder, decideOrder, proposeManualOrder } from "@/src/services/trade-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -53,13 +53,19 @@ export async function POST(request: Request) {
 
 const decisionSchema = z.object({
   id: z.string().min(1),
-  action: z.enum(["approve", "reject"])
+  action: z.enum(["approve", "reject", "cancel"])
 });
 
 export async function PATCH(request: Request) {
   const parsed = decisionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Expected { id, action: approve|reject }." }, { status: 400 });
+    return NextResponse.json({ error: "Expected { id, action: approve|reject|cancel }." }, { status: 400 });
+  }
+
+  if (parsed.data.action === "cancel") {
+    const result = await cancelOrder(parsed.data.id);
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 409 });
+    return NextResponse.json({ ok: true });
   }
 
   const order = await prisma.order.findUnique({ where: { id: parsed.data.id } });

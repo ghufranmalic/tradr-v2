@@ -1493,24 +1493,19 @@ button, input, select {
   color: var(--fg);
 }
 
-.manual-order-search {
-  position: relative;
-}
 
 .manual-order-results {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  /* Normal flow, not an absolute overlay — the parent .card has overflow:hidden
+     for its rounded corners, which would silently clip an absolutely positioned
+     dropdown extending past the card's edge. */
   display: flex;
   flex-direction: column;
+  margin-top: 6px;
   max-height: 260px;
   overflow-y: auto;
-  background: var(--bg);
+  background: var(--bg-muted);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 .manual-order-result {
