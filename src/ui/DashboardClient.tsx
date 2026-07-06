@@ -1315,7 +1315,8 @@ export default function DashboardClient({
                     ))}
                     {dashboard.recommendations.length === 0 ? (
                       <div className="empty-state">
-                        No AI opinions yet. Set GEMINI_API_KEY locally and enable the AI advisor to start seeing these.
+                        No AI opinions yet. Enable the AI advisor above — it uses local Ollama by default (no key
+                        needed), or GROQ_API_KEY / GEMINI_API_KEY if you've set one, and shows up here after your next sync.
                       </div>
                     ) : null}
                   </div>
