@@ -89,13 +89,16 @@ Start in confirm-only mode and watch it for a while before enabling auto-approve
 Run `npm run backtest` first to see how the underlying signal logic would have performed
 historically — see [README.md](README.md#auto-buysell) for details.
 
-## AI advisor (optional)
+## AI advisor (optional, free)
 
-Set `GEMINI_API_KEY` in your local `.env` (free key from
-[Google AI Studio](https://aistudio.google.com/apikey)) to enable a second-opinion
-layer that attaches rationale/confidence to proposals and can pause auto-approve on
-disagreement. See [README.md](README.md#ai-advisor-optional-free-tier) for how it's
-wired in — it never places trades by itself.
+Works out of the box with **local Ollama** — no signup needed. Install from
+[ollama.com](https://ollama.com) and run `ollama pull qwen2.5:7b`; the watcher
+picks it up automatically via `OLLAMA_BASE_URL`/`OLLAMA_MODEL` in `.env`. To
+upgrade to a faster cloud model later, set `GROQ_API_KEY` (free, no billing card)
+or `GEMINI_API_KEY` (free, but needs a linked billing account on Google's side) —
+whichever is set takes priority over Ollama, no code changes needed. See
+[README.md](README.md#ai-advisor-optional-free) for how it's wired in — it never
+places trades by itself.
 
 ## Troubleshooting
 

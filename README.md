@@ -109,12 +109,27 @@ signal thresholds into buy/sell order proposals every collection run:
   (no lookahead) and reports win rate / average return per trade. Results are
   only meaningful once enough daily closes have accumulated (30+ days per symbol).
 
-## AI advisor (optional, free tier)
+## AI advisor (optional, free)
 
-Set `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey),
-free) to turn on a second-opinion reasoning layer in
-[src/services/ai-advisor.ts](src/services/ai-advisor.ts). Two things worth
-understanding about how it's wired in:
+[src/services/ai-advisor.ts](src/services/ai-advisor.ts) is a second-opinion
+reasoning layer with three interchangeable providers, tried in this order —
+first one configured wins:
+
+1. **Groq** (`GROQ_API_KEY`) — free tier, fast, no billing card required. Sign
+   up at [console.groq.com](https://console.groq.com/keys).
+2. **Gemini** (`GEMINI_API_KEY`) — free tier, but Google requires linking a
+   billing account (no charge while under free limits) before quota activates —
+   get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+3. **Ollama** (local, default) — install from [ollama.com](https://ollama.com),
+   run `ollama pull qwen2.5:7b` (or any model you prefer), and it just works —
+   no signup, no key, fully private. This is what runs if neither key above is set.
+
+It calls the provider **once per candidate symbol**, not one batched call for
+everything — small local models were observed silently dropping items from
+multi-symbol batches, so single-symbol prompts trade a few extra round-trips
+(free/instant for local Ollama) for much better reliability.
+
+Two things worth understanding about how it's wired in:
 
 - **It never originates trades.** The quant engine (SMA/RSI/MACD/Bollinger/
   momentum/volume/support-resistance signals, plus your +/- % thresholds) is what

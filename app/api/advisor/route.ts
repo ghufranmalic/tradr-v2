@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/src/lib/prisma";
-import { hasGeminiConfig } from "@/src/config/env";
 import { calculateIndicators } from "@/src/services/indicators";
 import { closeSeriesBulk } from "@/src/services/market-repository";
 import { generateRecommendations } from "@/src/services/ai-advisor";
@@ -13,10 +12,6 @@ export const maxDuration = 30;
 const requestSchema = z.object({ symbol: z.string().min(1).max(20) });
 
 export async function POST(request: Request) {
-  if (!hasGeminiConfig) {
-    return NextResponse.json({ error: "GEMINI_API_KEY is not configured on this server." }, { status: 400 });
-  }
-
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Expected { symbol }." }, { status: 400 });

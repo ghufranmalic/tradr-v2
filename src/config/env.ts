@@ -28,9 +28,13 @@ const envSchema = z.object({
   KTRADE_ORDER_SELECTORS_JSON: z.string().optional().default(""),
   /** Master switch for live order execution. Orders stay in confirm/dry-run mode unless "true". */
   AUTO_TRADE_LIVE: z.coerce.boolean().default(false),
-  /** Free-tier Google AI Studio key for the advisory reasoning layer. Advisor is skipped entirely if unset. */
+  /** Advisory reasoning layer — tried in order: Groq, then Gemini, then local Ollama. All three optional. */
+  GROQ_API_KEY: z.string().optional().default(""),
+  GROQ_MODEL: z.string().default("llama-3.3-70b-versatile"),
   GEMINI_API_KEY: z.string().optional().default(""),
   GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
+  OLLAMA_BASE_URL: z.string().default("http://localhost:11434"),
+  OLLAMA_MODEL: z.string().default("qwen2.5:7b"),
   GOOGLE_SHEETS_SPREADSHEET_ID: z.string().optional().default(""),
   GOOGLE_SHEETS_CLIENT_EMAIL: z.string().optional().default(""),
   GOOGLE_SHEETS_PRIVATE_KEY: z.string().optional().default(""),
@@ -49,7 +53,6 @@ export const hasGoogleSheetsConfig = Boolean(
     env.GOOGLE_SHEETS_PRIVATE_KEY
 );
 export const hasTelegramConfig = Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID);
-export const hasGeminiConfig = Boolean(env.GEMINI_API_KEY);
 
 export type OrderTicketSelectors = {
   openTicket: string;
