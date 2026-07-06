@@ -226,13 +226,15 @@ function buildPrompt(candidate: AdvisorCandidate, horizon: string): string {
     `rsi14=${candidate.indicators.rsi14 ?? "n/a"}`,
     `macd=${candidate.indicators.macd ?? "n/a"}/${candidate.indicators.macdSignal ?? "n/a"}`,
     `momentum10=${candidate.indicators.momentum10 ?? "n/a"}%`,
-    `volumeRatio=${candidate.indicators.volumeRatio ?? "n/a"}`
+    `volumeRatio=${candidate.indicators.volumeRatio ?? "n/a"}`,
+    `trailingDividendYield=${candidate.indicators.dividendYieldTrailing12m !== undefined ? candidate.indicators.dividendYieldTrailing12m.toFixed(1) + "%" : "n/a"}`
   ].join(", ");
 
   return [
     `You are a cautious equity research assistant reviewing a Pakistan Stock Exchange (PSX) position for a ${horizon} trading horizon.`,
     "You are NOT placing any trade — you are producing an advisory opinion that a human will review before anything happens.",
     "Decide a side (buy/sell/hold/watch), a confidence, and a one-sentence rationale grounded ONLY in the numbers given below — never invent news, fundamentals, or data you weren't given.",
+    "Factor trailing dividend yield into total-return thinking, not just price movement — a high-yield position with weak price signals may still warrant 'hold' rather than 'sell'.",
     "Be conservative: if signals conflict or data is thin, prefer 'hold' or 'watch' with lower confidence rather than a strong buy/sell call.",
     "",
     `${candidate.symbol}: ${indicatorSummary}. Triggered signals: ${signalSummary}. ${positionLine}`,

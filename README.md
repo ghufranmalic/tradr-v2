@@ -106,8 +106,31 @@ signal thresholds into buy/sell order proposals every collection run:
   `npm run ktrade:inspect-order-ticket`, which fills the ticket but never submits).
 - Run `npm run backtest [SYMBOL]` before trusting any of this with real money — it
   replays the quant signal engine walk-forward over recorded price history
-  (no lookahead) and reports win rate / average return per trade. Results are
-  only meaningful once enough daily closes have accumulated (30+ days per symbol).
+  (no lookahead) and reports win rate / average return per trade, using both
+  price return and dividends received while a position was held.
+
+## Historical data (prices, dividends, full symbol directory)
+
+The organic daily collector alone would take years to build up enough history for
+indicators like SMA50 to mean anything. Instead, backfill real history directly
+from PSX's own public data — free, no login required:
+
+```bash
+npm run sync-symbol-directory        # all 745 PSX-listed equities: symbol, name, sector
+npm run backfill-history [SYMBOL...]  # ~5 years of daily OHLCV per symbol (dps.psx.com.pk)
+npm run backfill-dividends [SYMBOL...] # ~5 years of dividend payouts per symbol (stockanalysis.com)
+```
+
+With no symbol arguments, `backfill-history`/`backfill-dividends` run against every
+symbol currently in the `Ticker` table — after `sync-symbol-directory` that's all 745,
+so pass explicit symbols (or run it before the directory sync) to scope it to just
+your portfolio/watch list. `sync-symbol-directory` only populates name/sector — it
+does not add those symbols to the active collection/signals/AI-advisor loop, which
+stays scoped to your portfolio + KTrade watch list to keep sync runs fast.
+
+Dividends feed two things: total-return-aware backtesting (price return alone
+understates real returns for dividend payers), and an "attractive yield" signal
+(trailing 12-month yield ≥ 8%) that also gets passed to the AI advisor's prompt.
 
 ## AI advisor (optional, free)
 

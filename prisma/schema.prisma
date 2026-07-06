@@ -23,6 +23,23 @@ model Ticker {
   alertRules  AlertRule[]
   orders      Order[]
   recommendations Recommendation[]
+  dividends   Dividend[]
+}
+
+/// Real dividend payout history, backfilled from stockanalysis.com's public PSX data —
+/// used for total-return-aware backtesting and a yield-aware advisor signal.
+model Dividend {
+  id        String   @id @default(cuid())
+  tickerId  String
+  ticker    Ticker   @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  exDate    DateTime
+  amount    Decimal
+  payDate   DateTime?
+  source    String   @default("stockanalysis")
+  createdAt DateTime @default(now())
+
+  @@unique([tickerId, exDate])
+  @@index([exDate])
 }
 
 model PriceBar {

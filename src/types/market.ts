@@ -75,6 +75,7 @@ export type IndicatorSet = {
   volumeRatio?: number;
   recentHigh?: number;
   recentLow?: number;
+  dividendYieldTrailing12m?: number;
 };
 
 export type SignalInput = {

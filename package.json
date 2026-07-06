@@ -16,6 +16,9 @@
     "ktrade:inspect-portfolio": "tsx scripts/inspect-ktrade-portfolio.ts",
     "ktrade:inspect-order-ticket": "tsx scripts/inspect-ktrade-order-ticket.ts",
     "backtest": "tsx scripts/backtest.ts",
+    "backfill-history": "tsx scripts/backfill-history.ts",
+    "backfill-dividends": "tsx scripts/backfill-dividends.ts",
+    "sync-symbol-directory": "tsx scripts/sync-symbol-directory.ts",
     "collector": "tsx src/jobs/collector.ts",
     "sync-watcher": "tsx src/jobs/sync-watcher.ts",
     "playwright:install": "playwright install chromium"

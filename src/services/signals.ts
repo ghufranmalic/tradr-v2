@@ -71,6 +71,17 @@ function buildCommonIndicatorSignals(symbol: string, close: number, indicators: 
     });
   }
 
+  if (indicators.dividendYieldTrailing12m !== undefined && indicators.dividendYieldTrailing12m >= 8 && close > 0) {
+    signals.push({
+      symbol,
+      type: "attractive_yield",
+      side: "watch",
+      score: 45,
+      message: `${symbol} trailing 12-month dividend yield is ${indicators.dividendYieldTrailing12m.toFixed(1)}%`,
+      metadata: { dividendYieldTrailing12m: indicators.dividendYieldTrailing12m }
+    });
+  }
+
   return signals;
 }
 

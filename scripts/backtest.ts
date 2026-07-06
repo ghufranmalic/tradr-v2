@@ -11,12 +11,16 @@ import { buildPositionIndicatorSignals } from "@/src/services/signals";
  *
  * Usage: npx tsx scripts/backtest.ts [SYMBOL]
  * With no argument, backtests every symbol with enough recorded history.
+ * Run `npm run backfill-history` first if a symbol has too little history —
+ * it pulls ~5 years of real daily closes from PSX's public data portal.
  *
- * Caveat: this repo has only been collecting price history for a short time,
- * so early runs will have thin/no results — this becomes more meaningful as
- * daily closes accumulate. Also note results here reflect the technical
- * indicator signals only, not the %-gain/loss-from-purchase-price thresholds
- * (those need a real entry price, which a synthetic backtest can't assume).
+ * Caveat: results here reflect the technical indicator signals only, not the
+ * %-gain/loss-from-purchase-price thresholds (those need a real entry price,
+ * which a synthetic backtest can't assume).
+ *
+ * Returns include dividends paid while a position was simulated as held (run
+ * `npm run backfill-dividends` first) — price return alone understates real
+ * returns for dividend payers, sometimes significantly over a multi-year hold.
  */
 
 const MIN_HISTORY_DAYS = 30;
@@ -28,6 +32,7 @@ type Trade = {
   entryPrice: number;
   exitDate: string;
   exitPrice: number;
+  dividendPerShare: number;
   returnPercent: number;
 };
 
@@ -40,6 +45,9 @@ async function main() {
       prices: {
         where: { interval: "1d" },
         orderBy: { date: "asc" }
+      },
+      dividends: {
+        orderBy: { exDate: "asc" }
       }
     }
   });
@@ -58,6 +66,7 @@ async function main() {
 
     let inPosition = false;
     let entryDate = "";
+    let entryDateObj: Date | null = null;
     let entryPrice = 0;
     let holdDays = 0;
 
@@ -73,6 +82,7 @@ async function main() {
         if (signals.some((signal) => signal.side === "buy")) {
           inPosition = true;
           entryDate = bars[i].date.toISOString().slice(0, 10);
+          entryDateObj = bars[i].date;
           entryPrice = close;
           holdDays = 0;
         }
@@ -83,13 +93,19 @@ async function main() {
       const isLastBar = i === bars.length - 1;
       const shouldExit = signals.some((signal) => signal.side === "sell") || holdDays >= MAX_HOLD_DAYS || isLastBar;
       if (shouldExit) {
+        const exitDateObj = bars[i].date;
+        const dividendPerShare = ticker.dividends
+          .filter((dividend) => dividend.exDate > entryDateObj! && dividend.exDate <= exitDateObj)
+          .reduce((sum, dividend) => sum + Number(dividend.amount), 0);
+
         trades.push({
           symbol: ticker.symbol,
           entryDate,
           entryPrice,
-          exitDate: bars[i].date.toISOString().slice(0, 10),
+          exitDate: exitDateObj.toISOString().slice(0, 10),
           exitPrice: close,
-          returnPercent: round(((close - entryPrice) / entryPrice) * 100)
+          dividendPerShare,
+          returnPercent: round(((close - entryPrice + dividendPerShare) / entryPrice) * 100)
         });
         inPosition = false;
       }
@@ -99,7 +115,23 @@ async function main() {
   const wins = trades.filter((trade) => trade.returnPercent > 0);
   const avgReturn = trades.length > 0 ? trades.reduce((sum, trade) => sum + trade.returnPercent, 0) / trades.length : 0;
   const winRate = trades.length > 0 ? (wins.length / trades.length) * 100 : 0;
-  const cumulativeGrowth = trades.reduce((acc, trade) => acc * (1 + trade.returnPercent / 100), 1);
+
+  // Compounding ALL trades together (across every symbol) into one product would imply they
+  // happened sequentially in a single account, which is wrong — trades in different symbols
+  // overlap in time. Compounding is only valid *within* one symbol, where this simulation never
+  // holds two positions at once. So: compound per-symbol, then average those per-symbol results —
+  // an honest (if still simplified — it assumes equal capital re-allocated to each symbol) figure.
+  const bySymbol = new Map<string, Trade[]>();
+  for (const trade of trades) {
+    const list = bySymbol.get(trade.symbol) ?? [];
+    list.push(trade);
+    bySymbol.set(trade.symbol, list);
+  }
+  const perSymbolReturns = [...bySymbol.values()].map(
+    (symbolTrades) => (symbolTrades.reduce((acc, trade) => acc * (1 + trade.returnPercent / 100), 1) - 1) * 100
+  );
+  const avgPerSymbolCompoundReturn =
+    perSymbolReturns.length > 0 ? perSymbolReturns.reduce((sum, value) => sum + value, 0) / perSymbolReturns.length : 0;
 
   console.log(
     JSON.stringify(
@@ -109,7 +141,7 @@ async function main() {
         totalTrades: trades.length,
         winRatePercent: round(winRate),
         avgReturnPerTradePercent: round(avgReturn),
-        cumulativeReturnPercent: round((cumulativeGrowth - 1) * 100),
+        avgPerSymbolCompoundReturnPercent: round(avgPerSymbolCompoundReturn),
         recentTrades: trades.slice(-20)
       },
       null,

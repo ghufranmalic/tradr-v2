@@ -22,6 +22,7 @@ import { decideCollection, markScheduledCollectionRun, type CollectionTrigger } 
 import { getMySignalPreference } from "@/src/services/my-signal-preferences";
 import { runTradeEngine } from "@/src/services/trade-engine";
 import type { AdvisorCandidate } from "@/src/services/ai-advisor";
+import { trailingYieldInfo } from "@/src/services/dividends";
 import { clearPendingSync } from "@/src/services/sync-queue";
 import {
   beginSyncRun,
@@ -135,6 +136,12 @@ export async function collectMarketData(
     for (const position of uniquePositions) {
       const series = positionSeriesBySymbol.get(position.symbol) ?? [];
       const indicators = calculateIndicators(series.map((row) => row.close), series.map((row) => row.volume));
+
+      const yieldInfo = await trailingYieldInfo(position.symbol, now).catch(() => null);
+      if (yieldInfo && position.lastPrice > 0) {
+        indicators.dividendYieldTrailing12m = (yieldInfo.trailingTwelveMonthDividend / position.lastPrice) * 100;
+      }
+
       indicatorEntries.push({ symbol: position.symbol, date: now, indicators });
 
       const previous = [...series].reverse().find((row) => row.date < tradingDate)?.close;
