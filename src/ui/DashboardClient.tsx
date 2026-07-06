@@ -92,6 +92,18 @@ export type DashboardData = {
     detail: string;
     proposedAt: string;
     executedAt: string | null;
+    aiRationale: string | null;
+    aiConfidence: number | null;
+    aiSide: string | null;
+  }>;
+  recommendations: Array<{
+    symbol: string;
+    name: string;
+    side: string;
+    confidence: number;
+    horizon: string;
+    rationale: string;
+    createdAt: string;
   }>;
   priceLog: PriceLogEntry[];
 };
@@ -100,6 +112,8 @@ type TradeSettings = {
   enabled: boolean;
   autoApprove: boolean;
   liveExecution: boolean;
+  aiAdvisorEnabled: boolean;
+  horizon: string;
   sellPortionPercent: number;
   buyOrderValue: number;
   maxOrderValue: number;
@@ -181,6 +195,9 @@ export default function DashboardClient({
   const [mySignalPreference, setMySignalPreference] = useState(data.mySignalPreference);
   const [tradeSettings, setTradeSettings] = useState(data.tradeSettings);
   const [orderBusy, setOrderBusy] = useState<string | null>(null);
+  const [askAiSymbol, setAskAiSymbol] = useState("");
+  const [askAiBusy, setAskAiBusy] = useState(false);
+  const [askAiAnswer, setAskAiAnswer] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; direction: "asc" | "desc" }>({
     key: "totalGainLoss",
     direction: "desc"
@@ -545,6 +562,25 @@ export default function DashboardClient({
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setOrderBusy(null);
+    }
+  }
+
+  async function askAi() {
+    setAskAiBusy(true);
+    setAskAiAnswer("");
+    try {
+      const response = await fetch("/api/advisor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: askAiSymbol })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Could not reach the AI advisor.");
+      setAskAiAnswer(payload.rationale ?? "No answer returned.");
+    } catch (error) {
+      setAskAiAnswer(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAskAiBusy(false);
     }
   }
 
@@ -1110,6 +1146,26 @@ export default function DashboardClient({
                       />
                       <span>Place live orders with KTrade (requires AUTO_TRADE_LIVE env var too)</span>
                     </label>
+                    <label className="toggle">
+                      <input
+                        checked={tradeSettings.aiAdvisorEnabled}
+                        onChange={(event) => setTradeSettings({ ...tradeSettings, aiAdvisorEnabled: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>AI advisor (second opinion on every proposal; pauses auto-approve if it disagrees)</span>
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Trading horizon</span>
+                      <select
+                        className="field-input"
+                        onChange={(event) => setTradeSettings({ ...tradeSettings, horizon: event.target.value })}
+                        value={tradeSettings.horizon}
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </label>
                     <div className="field-row">
                       <label className="field">
                         <span className="field-label">Sell portion (%)</span>
@@ -1182,6 +1238,11 @@ export default function DashboardClient({
                             {order.symbol} · {formatNumber(order.quantity)} @ {order.limitPrice ? formatMoney(order.limitPrice) : "mkt"}
                           </strong>
                           <span>{order.reason}</span>
+                          {order.aiRationale ? (
+                            <span className="ai-rationale">
+                              AI ({order.aiSide}, {order.aiConfidence}% confidence): {order.aiRationale}
+                            </span>
+                          ) : null}
                           <span className="order-meta">
                             {order.status} · {order.mode} · {new Date(order.proposedAt).toLocaleString()}
                             {order.detail ? ` · ${order.detail}` : ""}
@@ -1211,6 +1272,51 @@ export default function DashboardClient({
                     ))}
                     {dashboard.orders.length === 0 ? (
                       <div className="empty-state">No orders yet. They appear here once a position crosses your +/- % thresholds.</div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <div>
+                    <h2>AI opinions</h2>
+                    <p>Broader advisor read on watched symbols — advisory only, not trade triggers</p>
+                  </div>
+                </div>
+                <div className="card-body">
+                  <div className="ask-ai-row">
+                    <input
+                      className="field-input"
+                      onChange={(event) => setAskAiSymbol(event.target.value.toUpperCase())}
+                      placeholder="Ask about a symbol, e.g. MEBL"
+                      type="text"
+                      value={askAiSymbol}
+                    />
+                    <button className="btn btn-accent btn-sm" disabled={askAiBusy || !askAiSymbol} onClick={askAi} type="button">
+                      {askAiBusy ? "Asking…" : "Ask AI"}
+                    </button>
+                  </div>
+                  {askAiAnswer ? <div className="ai-answer">{askAiAnswer}</div> : null}
+                  <div className="signal-feed">
+                    {dashboard.recommendations.map((rec, index) => (
+                      <div className="signal-item" key={`${rec.symbol}-${index}`}>
+                        <span className={`signal-tag ${rec.side === "sell" ? "sell" : rec.side === "buy" ? "buy" : "watch"}`}>
+                          {rec.side}
+                        </span>
+                        <div className="signal-body">
+                          <strong>
+                            {rec.symbol} · {rec.confidence}% confidence · {rec.horizon}
+                          </strong>
+                          <span>{rec.rationale}</span>
+                          <span className="order-meta">{new Date(rec.createdAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {dashboard.recommendations.length === 0 ? (
+                      <div className="empty-state">
+                        No AI opinions yet. Set GEMINI_API_KEY locally and enable the AI advisor to start seeing these.
+                      </div>
                     ) : null}
                   </div>
                 </div>

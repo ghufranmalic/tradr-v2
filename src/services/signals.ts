@@ -1,8 +1,81 @@
 import { percentChange } from "@/src/lib/number";
 import type { IndicatorSet, PortfolioPositionInput, Quote, SignalInput } from "@/src/types/market";
 
-export function buildSignals(quote: Quote, previousClose: number | undefined, indicators: IndicatorSet): SignalInput[] {
+/** Bollinger/momentum/volume/range checks shared by both the full-quote and portfolio-only signal builders. */
+function buildCommonIndicatorSignals(symbol: string, close: number, indicators: IndicatorSet): SignalInput[] {
   const signals: SignalInput[] = [];
+
+  if (indicators.bollingerLower !== undefined && close < indicators.bollingerLower) {
+    signals.push({
+      symbol,
+      type: "bollinger_breakout_low",
+      side: "buy",
+      score: 65,
+      message: `${symbol} broke below its lower Bollinger band`,
+      metadata: { close, bollingerLower: indicators.bollingerLower }
+    });
+  }
+
+  if (indicators.bollingerUpper !== undefined && close > indicators.bollingerUpper) {
+    signals.push({
+      symbol,
+      type: "bollinger_breakout_high",
+      side: "sell",
+      score: 65,
+      message: `${symbol} broke above its upper Bollinger band`,
+      metadata: { close, bollingerUpper: indicators.bollingerUpper }
+    });
+  }
+
+  if (indicators.momentum10 !== undefined && Math.abs(indicators.momentum10) >= 10) {
+    signals.push({
+      symbol,
+      type: "strong_momentum",
+      side: indicators.momentum10 > 0 ? "watch" : "sell",
+      score: 60,
+      message: `${symbol} has ${indicators.momentum10 > 0 ? "gained" : "lost"} ${Math.abs(indicators.momentum10).toFixed(1)}% over the last 10 sessions`,
+      metadata: { momentum10: indicators.momentum10 }
+    });
+  }
+
+  if (indicators.volumeRatio !== undefined && indicators.volumeRatio >= 2) {
+    signals.push({
+      symbol,
+      type: "volume_spike",
+      side: "watch",
+      score: 55,
+      message: `${symbol} volume is ${indicators.volumeRatio.toFixed(1)}x its 20-day average`,
+      metadata: { volumeRatio: indicators.volumeRatio }
+    });
+  }
+
+  if (indicators.recentLow !== undefined && close <= indicators.recentLow * 1.01) {
+    signals.push({
+      symbol,
+      type: "near_support",
+      side: "buy",
+      score: 50,
+      message: `${symbol} is trading near its 20-day low (support)`,
+      metadata: { close, recentLow: indicators.recentLow }
+    });
+  }
+
+  if (indicators.recentHigh !== undefined && close >= indicators.recentHigh * 0.99) {
+    signals.push({
+      symbol,
+      type: "near_resistance",
+      side: "watch",
+      score: 50,
+      message: `${symbol} is trading near its 20-day high (resistance)`,
+      metadata: { close, recentHigh: indicators.recentHigh }
+    });
+  }
+
+  return signals;
+}
+
+export function buildSignals(quote: Quote, previousClose: number | undefined, indicators: IndicatorSet): SignalInput[] {
+  const signals: SignalInput[] = [...buildCommonIndicatorSignals(quote.symbol, quote.close, indicators)];
 
   if (indicators.sma20 && quote.close < indicators.sma20) {
     signals.push({
@@ -77,7 +150,7 @@ export function buildPositionIndicatorSignals(
   previousClose: number | undefined,
   indicators: IndicatorSet
 ): SignalInput[] {
-  const signals: SignalInput[] = [];
+  const signals: SignalInput[] = [...buildCommonIndicatorSignals(symbol, close, indicators)];
 
   if (indicators.sma20 && close < indicators.sma20) {
     signals.push({

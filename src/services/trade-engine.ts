@@ -1,8 +1,9 @@
 import { prisma } from "@/src/lib/prisma";
 import { env } from "@/src/config/env";
-import { normalizeTradingDate, upsertTickers } from "@/src/services/market-repository";
+import { normalizeTradingDate, saveRecommendations, upsertTickers } from "@/src/services/market-repository";
 import { getMySignalPreference } from "@/src/services/my-signal-preferences";
 import { getTradeSettings, type TradeSettingsView } from "@/src/services/trade-settings";
+import { generateRecommendations, type AdvisorCandidate, type AdvisorRecommendation } from "@/src/services/ai-advisor";
 import type { KTradeClient } from "@/src/services/ktrade/client";
 import type { PortfolioPositionInput } from "@/src/types/market";
 
@@ -11,6 +12,11 @@ import type { PortfolioPositionInput } from "@/src/types/market";
  * per-order value cap, per-day order cap, one order per symbol+side per day,
  * and live execution only when BOTH the dashboard toggle and the AUTO_TRADE_LIVE
  * environment switch are on. Everything is recorded on the Order table.
+ *
+ * The AI advisor (if enabled) is consulted for a second opinion on each
+ * proposal but never originates trades by itself — it can only attach
+ * rationale/confidence, or force a proposal back into manual "confirm" mode
+ * when it disagrees with the quant trigger, even if auto-approve is on.
  */
 
 export type TradeEngineResult = {
@@ -31,11 +37,15 @@ type OrderProposal = {
 
 export async function runTradeEngine(
   positions: PortfolioPositionInput[],
-  client?: KTradeClient
+  client?: KTradeClient,
+  candidates: AdvisorCandidate[] = []
 ): Promise<TradeEngineResult> {
   const result: TradeEngineResult = { proposed: 0, executed: 0, skipped: [] };
 
   const settings = await getTradeSettings();
+
+  const recommendationsBySymbol = await runAdvisor(candidates, settings);
+
   if (!settings.enabled) {
     result.skipped.push("Auto-trade is disabled in settings.");
     return result;
@@ -74,26 +84,36 @@ export async function runTradeEngine(
   if (proposals.length === 0) return result;
 
   const tickerIds = await upsertTickers(proposals.map((proposal) => ({ symbol: proposal.symbol })));
-  const initialStatus = settings.autoApprove ? "approved" : "proposed";
 
   const created = await prisma.$transaction(
-    proposals.map((proposal) =>
-      prisma.order.create({
+    proposals.map((proposal) => {
+      const recommendation = recommendationsBySymbol.get(proposal.symbol);
+      const disagrees = recommendationDisagrees(proposal.side, recommendation);
+      const autoApprove = settings.autoApprove && !disagrees;
+      const reason = recommendation
+        ? `${proposal.reason} AI take: ${recommendation.rationale}`
+        : proposal.reason;
+
+      return prisma.order.create({
         data: {
           tickerId: tickerIds.get(proposal.symbol)!,
           side: proposal.side,
           quantity: proposal.quantity,
           limitPrice: proposal.limitPrice,
           estimatedValue: proposal.estimatedValue,
-          reason: proposal.reason,
+          reason,
           signalType: proposal.signalType,
-          status: initialStatus,
-          mode: settings.autoApprove ? "auto" : "confirm",
-          decidedAt: settings.autoApprove ? new Date() : undefined
+          status: autoApprove ? "approved" : "proposed",
+          mode: autoApprove ? "auto" : "confirm",
+          decidedAt: autoApprove ? new Date() : undefined,
+          recommendationId: recommendation?.id,
+          detail: disagrees
+            ? `Held for manual review — AI advisor suggested ${recommendation!.side} (${recommendation!.confidence}% confidence), which disagrees with this ${proposal.side} trigger.`
+            : undefined
         },
         include: { ticker: { select: { symbol: true } } }
-      })
-    )
+      });
+    })
   );
   result.proposed = created.length;
 
@@ -102,6 +122,42 @@ export async function runTradeEngine(
   }
 
   return result;
+}
+
+/** Runs the AI advisor over all candidates (portfolio + watched symbols) and persists the opinions, regardless of whether any order proposal ends up needing them — this also feeds the dashboard's broader "opportunities" view. */
+async function runAdvisor(
+  candidates: AdvisorCandidate[],
+  settings: TradeSettingsView
+): Promise<Map<string, AdvisorRecommendation & { id: string }>> {
+  const result = new Map<string, AdvisorRecommendation & { id: string }>();
+  if (!settings.aiAdvisorEnabled || candidates.length === 0) return result;
+
+  const recommendations = await generateRecommendations(candidates, settings.horizon);
+  if (recommendations.length === 0) return result;
+
+  const idsBySymbol = await saveRecommendations(
+    recommendations.map((rec) => ({
+      symbol: rec.symbol,
+      side: rec.side,
+      confidence: rec.confidence,
+      horizon: settings.horizon,
+      rationale: rec.rationale
+    }))
+  );
+
+  for (const rec of recommendations) {
+    const id = idsBySymbol.get(rec.symbol);
+    if (id) result.set(rec.symbol, { ...rec, id });
+  }
+  return result;
+}
+
+/** True when the AI's opinion meaningfully contradicts the quant-triggered side, at a confidence worth pausing for. */
+function recommendationDisagrees(proposedSide: "buy" | "sell", recommendation?: AdvisorRecommendation & { id: string }): boolean {
+  if (!recommendation || recommendation.confidence < 50) return false;
+  if (proposedSide === "buy" && recommendation.side === "sell") return true;
+  if (proposedSide === "sell" && recommendation.side === "buy") return true;
+  return false;
 }
 
 /** Place every approved order through the broker session; records placed/failed per order. */

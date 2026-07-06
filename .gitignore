@@ -10,6 +10,3 @@ dist
 prisma/dev.db
 .vercel
 *.tsbuildinfo
-
-.vercel
-.env*

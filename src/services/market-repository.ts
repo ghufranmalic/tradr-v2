@@ -295,9 +295,12 @@ export async function savePortfolioSummary(metrics: PortfolioSummaryInput[]): Pr
   );
 }
 
-/** One query for the daily close history of many symbols: symbol -> ascending closes. */
-export async function closeSeriesBulk(symbols: string[], limitDays = 200): Promise<Map<string, Array<{ date: Date; close: number }>>> {
-  const result = new Map<string, Array<{ date: Date; close: number }>>();
+/** One query for the daily price history of many symbols: symbol -> ascending bars. */
+export async function closeSeriesBulk(
+  symbols: string[],
+  limitDays = 200
+): Promise<Map<string, Array<{ date: Date; close: number; volume: number }>>> {
+  const result = new Map<string, Array<{ date: Date; close: number; volume: number }>>();
   if (symbols.length === 0) return result;
 
   const start = new Date();
@@ -315,7 +318,7 @@ export async function closeSeriesBulk(symbols: string[], limitDays = 200): Promi
 
   for (const bar of bars) {
     const rows = result.get(bar.ticker.symbol) ?? [];
-    rows.push({ date: bar.date, close: Number(bar.close) });
+    rows.push({ date: bar.date, close: Number(bar.close), volume: Number(bar.volume) });
     result.set(bar.ticker.symbol, rows);
   }
   return result;
@@ -401,6 +404,34 @@ export async function saveSignals(signals: SignalInput[]): Promise<void> {
   });
 }
 
+/** Persists AI advisory recommendations and returns symbol -> id for the just-created rows (this run only). */
+export async function saveRecommendations(
+  recommendations: Array<{ symbol: string; side: string; confidence: number; horizon: string; rationale: string; signalsUsed?: unknown }>
+): Promise<Map<string, string>> {
+  if (recommendations.length === 0) return new Map();
+
+  const tickerIds = await upsertTickers(recommendations.map((rec) => ({ symbol: rec.symbol })));
+  const withTicker = recommendations.filter((rec) => tickerIds.has(rec.symbol));
+  if (withTicker.length === 0) return new Map();
+
+  const created = await prisma.$transaction(
+    withTicker.map((rec) =>
+      prisma.recommendation.create({
+        data: {
+          tickerId: tickerIds.get(rec.symbol)!,
+          side: rec.side,
+          confidence: rec.confidence,
+          horizon: rec.horizon,
+          rationale: rec.rationale,
+          signalsUsed: rec.signalsUsed ? JSON.stringify(rec.signalsUsed) : undefined
+        }
+      })
+    )
+  );
+
+  return new Map(created.map((row, index) => [withTicker[index].symbol, row.id]));
+}
+
 export async function portfolioSymbols(): Promise<string[]> {
   const holdings = await prisma.holding.findMany({ include: { ticker: true } });
   return holdings.map((holding) => holding.ticker.symbol);
@@ -426,7 +457,13 @@ function decimalIndicators(indicators: IndicatorSet) {
     rsi14: indicators.rsi14,
     macd: indicators.macd,
     macdSignal: indicators.macdSignal,
-    macdHist: indicators.macdHist
+    macdHist: indicators.macdHist,
+    bollingerUpper: indicators.bollingerUpper,
+    bollingerLower: indicators.bollingerLower,
+    momentum10: indicators.momentum10,
+    volumeRatio: indicators.volumeRatio,
+    recentHigh: indicators.recentHigh,
+    recentLow: indicators.recentLow
   };
 }
 

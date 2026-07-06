@@ -69,6 +69,12 @@ export type IndicatorSet = {
   macd?: number;
   macdSignal?: number;
   macdHist?: number;
+  bollingerUpper?: number;
+  bollingerLower?: number;
+  momentum10?: number;
+  volumeRatio?: number;
+  recentHigh?: number;
+  recentLow?: number;
 };
 
 export type SignalInput = {

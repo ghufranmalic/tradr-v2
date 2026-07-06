@@ -21,6 +21,7 @@ import { evaluateAlerts } from "@/src/services/alerts";
 import { decideCollection, markScheduledCollectionRun, type CollectionTrigger } from "@/src/services/collection-policy";
 import { getMySignalPreference } from "@/src/services/my-signal-preferences";
 import { runTradeEngine } from "@/src/services/trade-engine";
+import type { AdvisorCandidate } from "@/src/services/ai-advisor";
 import { clearPendingSync } from "@/src/services/sync-queue";
 import {
   beginSyncRun,
@@ -124,6 +125,7 @@ export async function collectMarketData(
     const now = new Date();
     const tradingDate = normalizeTradingDate(now);
     const indicatorEntries: Array<{ symbol: string; date: Date; indicators: ReturnType<typeof calculateIndicators> }> = [];
+    const candidates: AdvisorCandidate[] = [];
 
     // Portfolio technical signals run off each holding's own recorded price
     // history (recordPortfolioDailyCloses above) since it's the price series
@@ -132,11 +134,24 @@ export async function collectMarketData(
     const positionSeriesBySymbol = await closeSeriesBulk(uniquePositions.map((position) => position.symbol));
     for (const position of uniquePositions) {
       const series = positionSeriesBySymbol.get(position.symbol) ?? [];
-      const indicators = calculateIndicators(series.map((row) => row.close));
+      const indicators = calculateIndicators(series.map((row) => row.close), series.map((row) => row.volume));
       indicatorEntries.push({ symbol: position.symbol, date: now, indicators });
 
       const previous = [...series].reverse().find((row) => row.date < tradingDate)?.close;
-      allSignals.push(...buildPositionIndicatorSignals(position.symbol, position.lastPrice, previous, indicators));
+      const positionSignals = buildPositionIndicatorSignals(position.symbol, position.lastPrice, previous, indicators);
+      allSignals.push(...positionSignals);
+
+      const gainPercent = position.purchasePrice
+        ? ((position.lastPrice - position.purchasePrice) / position.purchasePrice) * 100
+        : undefined;
+      candidates.push({
+        symbol: position.symbol,
+        close: position.lastPrice,
+        purchasePrice: position.purchasePrice || undefined,
+        gainPercent,
+        indicators,
+        signals: positionSignals
+      });
     }
 
     // Quotes symbols (KTrade's own "DEFAULT WATCH" list) get the full
@@ -145,11 +160,13 @@ export async function collectMarketData(
     const quoteSeriesBySymbol = await closeSeriesBulk(uniqueQuotes.map((quote) => quote.symbol));
     for (const quote of uniqueQuotes) {
       const series = quoteSeriesBySymbol.get(quote.symbol) ?? [];
-      const indicators = calculateIndicators(series.map((row) => row.close));
+      const indicators = calculateIndicators(series.map((row) => row.close), series.map((row) => row.volume));
       indicatorEntries.push({ symbol: quote.symbol, date: quote.timestamp, indicators });
 
       const previous = [...series].reverse().find((row) => row.date < tradingDate)?.close;
-      allSignals.push(...buildSignals(quote, previous, indicators));
+      const quoteSignals = buildSignals(quote, previous, indicators);
+      allSignals.push(...quoteSignals);
+      candidates.push({ symbol: quote.symbol, close: quote.close, indicators, signals: quoteSignals });
     }
 
     await saveIndicatorsBulk(indicatorEntries);
@@ -157,7 +174,7 @@ export async function collectMarketData(
     await finishSyncStep("signals", `${allSignals.length} signals`);
 
     await startSyncStep("orders", "Evaluating auto-trade orders");
-    const tradeResult = await runTradeEngine(portfolioPositions, client);
+    const tradeResult = await runTradeEngine(portfolioPositions, client, candidates);
     await finishSyncStep(
       "orders",
       tradeResult.proposed > 0

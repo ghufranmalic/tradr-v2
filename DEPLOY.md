@@ -86,6 +86,16 @@ The **Trading** tab turns your existing +/- % thresholds into orders:
    are enforced server-side regardless of the above.
 
 Start in confirm-only mode and watch it for a while before enabling auto-approve or live execution.
+Run `npm run backtest` first to see how the underlying signal logic would have performed
+historically — see [README.md](README.md#auto-buysell) for details.
+
+## AI advisor (optional)
+
+Set `GEMINI_API_KEY` in your local `.env` (free key from
+[Google AI Studio](https://aistudio.google.com/apikey)) to enable a second-opinion
+layer that attaches rationale/confidence to proposals and can pause auto-approve on
+disagreement. See [README.md](README.md#ai-advisor-optional-free-tier) for how it's
+wired in — it never places trades by itself.
 
 ## Troubleshooting
 

@@ -1465,6 +1465,34 @@ button, input, select {
   color: var(--fg-subtle);
 }
 
+.ai-rationale {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--accent);
+}
+
+.ask-ai-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ask-ai-row .field-input {
+  flex: 1;
+}
+
+.ai-answer {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--fg);
+}
+
 .order-actions {
   display: flex;
   flex-direction: column;

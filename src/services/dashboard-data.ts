@@ -5,7 +5,7 @@ import { getTradeSettings } from "@/src/services/trade-settings";
 import type { DashboardData } from "@/src/ui/DashboardClient";
 
 export async function loadDashboardData(): Promise<DashboardData> {
-  const [holdings, portfolioPositions, summaryMetrics, signals, watchlists, prices, runs, settings, mySignalPreference, tradeSettings, orders] =
+  const [holdings, portfolioPositions, summaryMetrics, signals, watchlists, prices, runs, settings, mySignalPreference, tradeSettings, orders, recommendations] =
     await Promise.all([
       prisma.holding.findMany({
         include: {
@@ -49,8 +49,13 @@ export async function loadDashboardData(): Promise<DashboardData> {
       getMySignalPreference(),
       getTradeSettings(),
       prisma.order.findMany({
-        include: { ticker: { select: { symbol: true, name: true } } },
+        include: { ticker: { select: { symbol: true, name: true } }, recommendation: true },
         orderBy: { proposedAt: "desc" },
+        take: 50
+      }),
+      prisma.recommendation.findMany({
+        include: { ticker: { select: { symbol: true, name: true } } },
+        orderBy: { createdAt: "desc" },
         take: 50
       })
     ]);
@@ -160,7 +165,19 @@ export async function loadDashboardData(): Promise<DashboardData> {
       mode: order.mode,
       detail: order.detail ?? "",
       proposedAt: order.proposedAt.toISOString(),
-      executedAt: order.executedAt?.toISOString() ?? null
+      executedAt: order.executedAt?.toISOString() ?? null,
+      aiRationale: order.recommendation?.rationale ?? null,
+      aiConfidence: order.recommendation?.confidence ?? null,
+      aiSide: order.recommendation?.side ?? null
+    })),
+    recommendations: recommendations.map((rec) => ({
+      symbol: rec.ticker.symbol,
+      name: rec.ticker.name ?? "",
+      side: rec.side,
+      confidence: rec.confidence,
+      horizon: rec.horizon,
+      rationale: rec.rationale,
+      createdAt: rec.createdAt.toISOString()
     })),
     priceLog: portfolioPositions.map((position) => ({
       symbol: position.ticker.symbol,

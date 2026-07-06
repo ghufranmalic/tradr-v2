@@ -12,6 +12,8 @@ const settingsSchema = z.object({
   enabled: z.boolean(),
   autoApprove: z.boolean(),
   liveExecution: z.boolean(),
+  aiAdvisorEnabled: z.boolean(),
+  horizon: z.enum(["daily", "weekly", "monthly"]),
   sellPortionPercent: z.number(),
   buyOrderValue: z.number(),
   maxOrderValue: z.number(),

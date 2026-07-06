@@ -102,7 +102,36 @@ signal thresholds into buy/sell order proposals every collection run:
 - Orders default to **confirm** mode — you approve/reject each one from the dashboard.
   Turn on **auto-approve** once you trust the thresholds, and only then enable **live
   execution** to actually place orders via KTrade's order ticket
-  (configure `KTRADE_ORDER_SELECTORS_JSON`).
+  (configure `KTRADE_ORDER_SELECTORS_JSON` — verify first with
+  `npm run ktrade:inspect-order-ticket`, which fills the ticket but never submits).
+- Run `npm run backtest [SYMBOL]` before trusting any of this with real money — it
+  replays the quant signal engine walk-forward over recorded price history
+  (no lookahead) and reports win rate / average return per trade. Results are
+  only meaningful once enough daily closes have accumulated (30+ days per symbol).
+
+## AI advisor (optional, free tier)
+
+Set `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey),
+free) to turn on a second-opinion reasoning layer in
+[src/services/ai-advisor.ts](src/services/ai-advisor.ts). Two things worth
+understanding about how it's wired in:
+
+- **It never originates trades.** The quant engine (SMA/RSI/MACD/Bollinger/
+  momentum/volume/support-resistance signals, plus your +/- % thresholds) is what
+  decides whether an order gets proposed at all. The AI only attaches a
+  confidence + written rationale to that decision.
+- **It can pause auto-approve.** If the AI's opinion meaningfully disagrees with
+  a quant-triggered proposal (e.g. quant says sell, AI says buy at >50%
+  confidence), that order is held for manual review even if auto-approve is on.
+- Broader opinions across your whole watched universe (not just symbols that
+  triggered a trade proposal) show up under **Trading → AI opinions**, along
+  with an on-demand "ask about a symbol" box.
+- Configurable trading horizon (daily/weekly/monthly) shapes both the AI prompt
+  framing and shows up in the Trading tab settings.
+
+This is a synthesis layer, not a price predictor — no model, free or otherwise,
+reliably beats the market on short-term price direction. Treat its output as a
+second opinion to review, the same way you'd treat any single analyst's take.
 
 ## Alerts
 
