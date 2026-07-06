@@ -198,6 +198,17 @@ export default function DashboardClient({
   const [askAiSymbol, setAskAiSymbol] = useState("");
   const [askAiBusy, setAskAiBusy] = useState(false);
   const [askAiAnswer, setAskAiAnswer] = useState("");
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualResults, setManualResults] = useState<
+    Array<{ symbol: string; name: string; sector: string; lastClose: number | null; lastDate: string | null }>
+  >([]);
+  const [manualSelected, setManualSelected] = useState<{ symbol: string; lastClose: number | null } | null>(null);
+  const [manualSide, setManualSide] = useState<"buy" | "sell">("buy");
+  const [manualQuantity, setManualQuantity] = useState("");
+  const [manualPrice, setManualPrice] = useState("");
+  const [manualAiOpinion, setManualAiOpinion] = useState("");
+  const [manualAiBusy, setManualAiBusy] = useState(false);
+  const [manualBusy, setManualBusy] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; direction: "asc" | "desc" }>({
     key: "totalGainLoss",
     direction: "desc"
@@ -581,6 +592,80 @@ export default function DashboardClient({
       setAskAiAnswer(error instanceof Error ? error.message : String(error));
     } finally {
       setAskAiBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (manualQuery.trim().length === 0) {
+      setManualResults([]);
+      return;
+    }
+    const handle = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/symbols?q=${encodeURIComponent(manualQuery)}`);
+        if (response.ok) setManualResults(await response.json());
+      } catch {
+        // Search is best-effort; leave previous results in place.
+      }
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [manualQuery]);
+
+  function selectManualSymbol(result: { symbol: string; lastClose: number | null }) {
+    setManualSelected(result);
+    setManualQuery(result.symbol);
+    setManualResults([]);
+    setManualPrice(result.lastClose ? String(result.lastClose) : "");
+    setManualAiOpinion("");
+  }
+
+  async function askAiForManualSymbol() {
+    if (!manualSelected) return;
+    setManualAiBusy(true);
+    setManualAiOpinion("");
+    try {
+      const response = await fetch("/api/advisor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: manualSelected.symbol })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Could not reach the AI advisor.");
+      setManualAiOpinion(`${payload.side} (${payload.confidence}% confidence): ${payload.rationale}`);
+    } catch (error) {
+      setManualAiOpinion(error instanceof Error ? error.message : String(error));
+    } finally {
+      setManualAiBusy(false);
+    }
+  }
+
+  async function submitManualOrder() {
+    if (!manualSelected) return;
+    setManualBusy(true);
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: manualSelected.symbol,
+          side: manualSide,
+          quantity: Number(manualQuantity),
+          limitPrice: manualPrice ? Number(manualPrice) : undefined
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Could not create the order.");
+      setMessage(`Order proposed for ${manualSelected.symbol} — approve it below to continue.`);
+      setManualSelected(null);
+      setManualQuery("");
+      setManualQuantity("");
+      setManualPrice("");
+      setManualAiOpinion("");
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setManualBusy(false);
     }
   }
 
@@ -1216,6 +1301,104 @@ export default function DashboardClient({
                       <Save size={14} />
                       <span>Save trading settings</span>
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <div>
+                    <h2>Manual order</h2>
+                    <p>Pick any PSX symbol — even one you don't already hold — and propose a trade</p>
+                  </div>
+                </div>
+                <div className="card-body">
+                  <div className="form-stack">
+                    <div className="manual-order-search">
+                      <input
+                        className="field-input"
+                        onChange={(event) => {
+                          setManualQuery(event.target.value);
+                          setManualSelected(null);
+                        }}
+                        placeholder="Search symbol or company name, e.g. MEBL"
+                        type="text"
+                        value={manualQuery}
+                      />
+                      {manualResults.length > 0 ? (
+                        <div className="manual-order-results">
+                          {manualResults.map((result) => (
+                            <button
+                              className="manual-order-result"
+                              key={result.symbol}
+                              onClick={() => selectManualSymbol(result)}
+                              type="button"
+                            >
+                              <strong>{result.symbol}</strong>
+                              <span>{result.name}</span>
+                              <span className="manual-order-result-price">
+                                {result.lastClose ? formatMoney(result.lastClose) : "no price yet"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {manualSelected ? (
+                      <>
+                        <div className="field-row">
+                          <label className="field">
+                            <span className="field-label">Side</span>
+                            <select
+                              className="field-input"
+                              onChange={(event) => setManualSide(event.target.value as "buy" | "sell")}
+                              value={manualSide}
+                            >
+                              <option value="buy">Buy</option>
+                              <option value="sell">Sell</option>
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span className="field-label">Quantity</span>
+                            <input
+                              className="field-input"
+                              min={1}
+                              onChange={(event) => setManualQuantity(event.target.value)}
+                              type="number"
+                              value={manualQuantity}
+                            />
+                          </label>
+                        </div>
+                        <label className="field">
+                          <span className="field-label">Limit price (PKR)</span>
+                          <input
+                            className="field-input"
+                            min={0}
+                            onChange={(event) => setManualPrice(event.target.value)}
+                            step="0.01"
+                            type="number"
+                            value={manualPrice}
+                          />
+                        </label>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={manualAiBusy}
+                          onClick={askAiForManualSymbol}
+                          type="button"
+                        >
+                          {manualAiBusy ? "Asking…" : `Ask AI about ${manualSelected.symbol}`}
+                        </button>
+                        {manualAiOpinion ? <div className="ai-answer">{manualAiOpinion}</div> : null}
+                        <button
+                          className="btn btn-accent"
+                          disabled={manualBusy || !manualQuantity || Number(manualQuantity) < 1}
+                          onClick={submitManualOrder}
+                        >
+                          {manualBusy ? "Proposing…" : `Propose ${manualSide} order`}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -1493,6 +1493,57 @@ button, input, select {
   color: var(--fg);
 }
 
+.manual-order-search {
+  position: relative;
+}
+
+.manual-order-results {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.manual-order-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.manual-order-result:hover {
+  background: var(--bg-muted);
+}
+
+.manual-order-result span {
+  color: var(--fg-muted);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manual-order-result-price {
+  flex: none !important;
+  color: var(--fg-subtle) !important;
+}
+
 .order-actions {
   display: flex;
   flex-direction: column;

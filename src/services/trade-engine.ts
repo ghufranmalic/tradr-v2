@@ -204,6 +204,68 @@ export async function executeApprovedOrders(client: KTradeClient): Promise<numbe
   return executed;
 }
 
+export type ManualOrderInput = {
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  limitPrice?: number;
+};
+
+/**
+ * User-initiated order on any symbol — not gated by "enabled"/"auto-trade" or
+ * tied to an existing threshold trigger, but still subject to the same hard
+ * caps (max order value, max orders/day, one order per symbol+side per day).
+ * Always created as "proposed" — a manual order still needs your explicit
+ * approve click, regardless of the auto-approve setting.
+ */
+export async function proposeManualOrder(input: ManualOrderInput): Promise<{ orderId: string } | { error: string }> {
+  const symbol = input.symbol.trim().toUpperCase();
+  if (!symbol) return { error: "Symbol is required." };
+  if (!Number.isFinite(input.quantity) || input.quantity < 1) return { error: "Quantity must be at least 1." };
+
+  const ticker = await prisma.ticker.findUnique({ where: { symbol } });
+  if (!ticker) return { error: `${symbol} isn't in the tracked symbol directory yet.` };
+
+  const latestPrice = await prisma.priceBar.findFirst({
+    where: { tickerId: ticker.id, interval: "1d" },
+    orderBy: { date: "desc" }
+  });
+  const price = input.limitPrice ?? (latestPrice ? Number(latestPrice.close) : undefined);
+  if (!price || price <= 0) return { error: `No known price for ${symbol} — set a limit price.` };
+
+  const settings = await getTradeSettings();
+  const estimatedValue = input.quantity * price;
+  if (estimatedValue > settings.maxOrderValue) {
+    return { error: `Order value (${estimatedValue.toFixed(0)}) exceeds the max order value cap (${settings.maxOrderValue}).` };
+  }
+
+  const today = normalizeTradingDate(new Date());
+  const todaysOrders = await prisma.order.count({ where: { proposedAt: { gte: today } } });
+  if (todaysOrders >= settings.maxOrdersPerDay) {
+    return { error: `Daily order cap (${settings.maxOrdersPerDay}) already reached.` };
+  }
+
+  const duplicate = await prisma.order.findFirst({
+    where: { tickerId: ticker.id, side: input.side, proposedAt: { gte: today } }
+  });
+  if (duplicate) return { error: `A ${input.side} order for ${symbol} already exists today.` };
+
+  const order = await prisma.order.create({
+    data: {
+      tickerId: ticker.id,
+      side: input.side,
+      quantity: input.quantity,
+      limitPrice: price,
+      estimatedValue,
+      reason: "Manual order placed from the dashboard.",
+      status: "proposed",
+      mode: "manual"
+    }
+  });
+
+  return { orderId: order.id };
+}
+
 export async function decideOrder(orderId: string, action: "approve" | "reject"): Promise<void> {
   await prisma.order.update({
     where: { id: orderId },
